@@ -1,6 +1,15 @@
 import os
 import httpx
+import logging
 from fastapi import FastAPI, Request, HTTPException
+from dotenv import load_dotenv
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file (for local development)
+load_dotenv()
 
 app = FastAPI()
 
@@ -9,8 +18,8 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET")
 
 if not TELEGRAM_BOT_TOKEN or not ANTHROPIC_API_KEY or not TELEGRAM_WEBHOOK_SECRET:
-    # Railway will still deploy, but bot will not work until variables are set
-    pass
+    logger.warning("Missing environment variables! Bot will not work until all variables are set.")
+    logger.warning("Required: TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, TELEGRAM_WEBHOOK_SECRET")
 
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
@@ -72,6 +81,13 @@ async def telegram_webhook(request: Request):
     try:
         reply = await call_claude(text)
         await send_telegram_message(chat_id, reply)
-    except Exception:
-        await send_telegram_message(chat_id, "Error. Try again.")
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error: {e.response.status_code} - {e.response.text}")
+        await send_telegram_message(chat_id, "Error communicating with AI service. Please try again.")
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
+        await send_telegram_message(chat_id, "Network error. Please try again.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        await send_telegram_message(chat_id, "An error occurred. Please try again.")
     return {"ok": True}
